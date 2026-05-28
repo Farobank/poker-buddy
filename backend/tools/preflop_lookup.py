@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.engines import six_max_preflop
 from backend.integrations import hu_trainer
 from backend.tools.confidence import Confidence
 
@@ -44,7 +45,7 @@ def preflop_lookup(
     if fmt == "hu":
         return _hu(pos, hand, stack_depth_bb, actions)
     if fmt in ("6max", "6-max", "six_max", "sixmax"):
-        return _six_max_amber(pos, hand, actions)
+        return _six_max(pos, hand, actions)
     return {
         "data": None,
         "confidence": Confidence.AMBER.value,
@@ -103,18 +104,23 @@ def _hu(
         }
 
 
-def _six_max_amber(position: str, hand: str, actions: list[str]) -> dict[str, Any]:
-    """6-max has no solver-verified engine yet. Honest amber + a hint."""
-    return {
-        "data": None,
-        "confidence": Confidence.AMBER.value,
-        "source": "preflop_lookup (6max)",
-        "note": (
-            f"No solver-verified 6-max engine yet. For {position.upper()} with {hand} "
-            f"after {actions or 'no prior action'}, reason from published 6-max "
-            "ranges (Upswing / GTO Wizard) and flag confidence verbally."
-        ),
-    }
+def _six_max(position: str, hand: str, actions: list[str]) -> dict[str, Any]:
+    """Route a 6-max preflop spot to the grounded ranges engine.
+
+    Covered (green/yellow with data): open / vs-open (call·3bet) / vs-3bet
+    (4bet·call·fold) / blind defense at 100bb, from published ranges (see
+    backend/engines/SIX_MAX_NOTES.md). Spots outside that set (4-bet+ wars,
+    limped/multiway) decline with amber + a note rather than fabricating a line.
+    """
+    try:
+        return six_max_preflop.lookup(position, hand, actions)
+    except Exception as exc:  # never crash the webhook — degrade to honest amber
+        return {
+            "data": None,
+            "confidence": Confidence.AMBER.value,
+            "source": "preflop_lookup (6max)",
+            "note": f"Lookup failed ({type(exc).__name__}: {exc}). Reason from theory.",
+        }
 
 
 def _parse_size_from_action(action: str, default: float) -> float:

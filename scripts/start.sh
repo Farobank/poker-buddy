@@ -85,7 +85,9 @@ TUNNEL_PID=$!
 # parse the trycloudflare.com URL out of the tunnel log (up to 30s)
 PUBLIC_URL=""
 for i in {1..60}; do
-  PUBLIC_URL=$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | head -n1 || true)
+  # Exclude api.trycloudflare.com — that's Cloudflare's control endpoint (it also
+  # appears in error lines like a failed-tunnel timeout), never the public URL.
+  PUBLIC_URL=$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | grep -v '://api\.trycloudflare\.com' | head -n1 || true)
   if [[ -n "$PUBLIC_URL" ]]; then break; fi
   if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
     echo "❌ tunnel crashed. Last lines of $TUNNEL_LOG:"

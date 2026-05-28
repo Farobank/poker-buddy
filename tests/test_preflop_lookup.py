@@ -29,11 +29,47 @@ def test_hu_bb_no_action_returns_amber_with_note():
     assert "BTN" in r["note"] or "btn" in r["note"].lower()
 
 
-def test_six_max_returns_null_amber():
-    r = preflop_lookup("6max", "co", "AKs", action_so_far=[])
+def test_six_max_co_open_is_grounded():
+    # The 6-max branch now routes to the grounded preflop engine: a CO open of a
+    # suited ace comes back green/yellow with real data, NOT amber/None.
+    r = preflop_lookup("6max", "co", "A5s", action_so_far=[])
+    assert r["data"] is not None, "6-max CO open must now be grounded, not amber"
+    assert r["confidence"] in (Confidence.GREEN.value, Confidence.YELLOW.value)
+    assert r["data"]["action"] == "raise"
+    assert "6-max" in r["source"]
+
+
+def test_six_max_utg_trash_folds_green():
+    r = preflop_lookup("6max", "utg", "72o", action_so_far=[])
+    assert r["data"]["action"] == "fold"
+    assert r["confidence"] == Confidence.GREEN.value
+
+
+def test_six_max_bb_defends_vs_open():
+    r = preflop_lookup("6max", "bb", "T9s", action_so_far=["co_open_2.5"])
+    assert r["data"] is not None
+    assert r["data"]["action"] in ("call", "3bet")
+
+
+def test_six_max_vs_3bet_4bets_aces():
+    # CO opens, BTN 3-bets, CO holds aces -> grounded 4-bet for value.
+    r = preflop_lookup(
+        "6max", "co", "AA", action_so_far=["co_open_2.5", "btn_3bet_8"]
+    )
+    assert r["data"] is not None
+    assert r["data"]["action"] == "4bet"
+    assert r["confidence"] == Confidence.GREEN.value
+
+
+def test_six_max_out_of_scope_spot_declines_amber():
+    # Facing a 4-bet is outside the v1 grounded set: amber + note, no invented line.
+    r = preflop_lookup(
+        "6max", "co", "AA",
+        action_so_far=["co_open_2.5", "btn_3bet_8", "co_4bet_18", "btn_5bet"],
+    )
     assert r["data"] is None
     assert r["confidence"] == Confidence.AMBER.value
-    assert "6-max" in r["note"] or "solver-verified" in r["note"]
+    assert r["note"]
 
 
 def test_unknown_format():

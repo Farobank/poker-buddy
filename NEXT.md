@@ -19,6 +19,14 @@ Talking to it on a phone has worked. The agent calls the right tools for HU
 spots, returns amber-with-honesty for 6-max preflop, and refuses real-time
 online assistance per the boundary rule.
 
+### Changed this session (2026-05-28, late) — 6-max preflop is now GROUNDED
+
+- **6-max preflop engine shipped (was amber/None).** New `backend/engines/six_max_preflop.py`: open / vs-open (call·3bet) / vs-3bet (4bet·call·fold) / blind defense for all six seats (UTG, MP/LJ, CO, BTN, SB, BB) at 100bb, from published ranges (Upswing / GTO Wizard consensus, cross-verified — methodology + sources in `backend/engines/SIX_MAX_NOTES.md`). Tagged green/yellow, **never amber-guessing, never a fabricated number**; out-of-scope spots (4-bet+ wars, multiway) decline with amber + a note. Wired into `preflop_lookup.py` (`_six_max`), returns the same normalized `{data, confidence, source}` dict as the HU path.
+- **System-prompt coverage map updated.** 6-max *preflop* is now grounded (green/yellow via `preflop_lookup`); 6-max *postflop* and HU turn/river remain no-number. Pushed live to `agent_8001ksqwswrme5s9kpvfw667t828`.
+- **Theory corpus grew by 4 verified chunks** (HU turn play, bet-sizing theory, blockers/combinatorics, exploiting player types) under `theory/concept-*.md`, each with its verifier-flagged overclaims fixed. The 4 inaccurate chunks (HU river, 6-max preflop prose, 6-max postflop, multiway) were intentionally NOT merged.
+- **`start.sh` tunnel-URL parse bug fixed** — it was grabbing `https://api.trycloudflare.com` (Cloudflare's control host, which also shows up in failed-tunnel error lines) instead of the real quick-tunnel URL. Now excludes `api.`.
+- **Verified:** suite **144 green** (was 89). Pushed live + confirmed through the tunnel — "small blind heads up ace-king" → green; "six-max cutoff opening range" → green (not amber); wrong secret → 401.
+
 ### Changed this session (2026-05-28, evening)
 
 - **Trust rule hardened in `system-prompt.md`.** Front-loaded a "one rule that matters most" block with BAD/GOOD example pairs that name the exact leak streets (HU turn/river + all 6-max postflop), and tightened Hard Rule #1 with the tool-coverage map. Closes issue #1's known failure mode. *Not yet live on the agent — gets pushed on the next `sync_agent.py` run.*

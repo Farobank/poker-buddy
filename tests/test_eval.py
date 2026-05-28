@@ -136,22 +136,46 @@ def test_spot_04_hu_cbet_wet_board(client):
 
 
 # ---------------------------------------------------------------------------
-# Spot 5 — 6-max CO open: confidence MUST be amber, no fabricated frequency
+# Spot 5 — 6-max CO open: now GROUNDED by the preflop ranges engine.
+# (Previously this asserted amber/None — before the engine existed. The trust
+# rule is preserved differently now: a covered open returns REAL published-range
+# data tagged green/yellow, never an amber guess and never a fabricated number.)
 # ---------------------------------------------------------------------------
 
-def test_spot_05_6max_co_open_amber(client):
-    """The trust rule: 6-max preflop has no solver engine, so the tool MUST
-    return amber with data=None. If this ever turns green/yellow with concrete
-    frequencies, the buddy will start making numbers up."""
+def test_spot_05_6max_co_open_grounded(client):
+    """6-max CO open is now grounded. JTs from the cutoff comes back green/yellow
+    with a concrete raise decision from published ranges — not amber. The buddy
+    can finally state a 6-max opening range because it's a real lookup."""
     r = client.post(
         "/tools/preflop_lookup",
         json={"format": "6max", "position": "co", "hand": "JTs"},
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["confidence"] == "amber", body
-    assert body["data"] is None, "6-max preflop must NOT fabricate concrete data"
-    assert "note" in body and body["note"], "Amber response must include a note"
+    assert body["confidence"] in ("green", "yellow"), body
+    assert body["data"] is not None, "6-max CO open must now be grounded, not amber"
+    assert body["data"]["action"] == "raise"
+    assert "6-max" in body["source"]
+
+
+def test_spot_05b_6max_open_never_fabricates(client):
+    """The anti-fabrication guarantee that replaces the old amber rule: a covered
+    6-max open is NEVER amber (it's a real lookup), and a hand outside the range
+    is a clean green fold — no invented frequency either way."""
+    # A clear trash hand UTG: definitive green fold, no fabrication.
+    fold = client.post(
+        "/tools/preflop_lookup",
+        json={"format": "6max", "position": "utg", "hand": "72o"},
+    ).json()
+    assert fold["data"]["action"] == "fold"
+    assert fold["confidence"] == "green"
+    # A covered open is grounded, never an amber guess.
+    open_ = client.post(
+        "/tools/preflop_lookup",
+        json={"format": "6max", "position": "btn", "hand": "A5s"},
+    ).json()
+    assert open_["confidence"] in ("green", "yellow")
+    assert open_["data"] is not None
 
 
 # ---------------------------------------------------------------------------
