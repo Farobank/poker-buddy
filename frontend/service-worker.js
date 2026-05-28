@@ -1,18 +1,19 @@
 /**
- * Minimal service worker for installability.
+ * Service worker for installability — NETWORK-FIRST.
  *
- * Strategy: cache the app shell on install; for everything else, go to the
- * network (we depend on the ConvAI widget script and the live tunnel). The
- * point of the SW is to satisfy iOS's "installable web app" requirements;
- * offline-first is explicitly NOT a goal — the buddy needs the live LLM.
+ * The buddy needs the live network (ElevenLabs SDK + the backend tunnel), so
+ * offline-first is explicitly NOT a goal. We go to the network first for the
+ * app shell and fall back to cache only when offline. This guarantees an
+ * updated index.html always loads — a cache-first shell previously served a
+ * stale UI even after deploys.
  */
 
-const CACHE_NAME = "poker-buddy-v1";
+const CACHE_NAME = "poker-buddy-v2";
 const SHELL = ["./", "./index.html", "./manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)),
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)).catch(() => {}),
   );
   self.skipWaiting();
 });
@@ -28,14 +29,22 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
+  const sameOrigin = req.url.startsWith(self.location.origin);
+  const isShell = sameOrigin && SHELL.some((p) => req.url.endsWith(p.replace("./", "")));
 
-  // Same-origin shell requests: cache-first.
-  if (req.url.startsWith(self.location.origin) && SHELL.some((p) => req.url.endsWith(p.replace("./", "")))) {
+  // Navigations + same-origin shell: network-first (always fresh), cache as offline fallback.
+  if (req.mode === "navigate" || isShell) {
     event.respondWith(
-      caches.match(req).then((res) => res || fetch(req)),
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
+          return res;
+        })
+        .catch(() => caches.match(req).then((r) => r || caches.match("./index.html"))),
     );
     return;
   }
 
-  // Everything else: network-only (we need the live widget + tunnel).
+  // Everything else (CDN scripts, the live backend/tunnel): network-only.
 });
