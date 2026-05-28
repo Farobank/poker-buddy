@@ -26,6 +26,10 @@ online assistance per the boundary rule.
 - **Theory corpus grew by 4 verified chunks** (HU turn play, bet-sizing theory, blockers/combinatorics, exploiting player types) under `theory/concept-*.md`, each with its verifier-flagged overclaims fixed. The 4 inaccurate chunks (HU river, 6-max preflop prose, 6-max postflop, multiway) were intentionally NOT merged.
 - **`start.sh` tunnel-URL parse bug fixed** — it was grabbing `https://api.trycloudflare.com` (Cloudflare's control host, which also shows up in failed-tunnel error lines) instead of the real quick-tunnel URL. Now excludes `api.`.
 - **Verified:** suite **144 green** (was 89). Pushed live + confirmed through the tunnel — "small blind heads up ace-king" → green; "six-max cutoff opening range" → green (not amber); wrong secret → 401.
+- **Trust rule tightened after live grading.** The core held (every postflop turn flagged "no solver data, just my read"), but the buddy was tacking a pot fraction onto those reads ("like half pot", "a third pot") — a number it didn't look up. `system-prompt.md` now requires no-data reads to stay directional and number-free ("bet small", "go thin"); narrating the villain's bet is still fine. Pushed live.
+- **Grader de-noised + now a reliable gate.** `backend/grader.py` no longer flags narrated villain bets ("he leads half pot") as fabrications (scoped villain-attribution guard) — the agent's own ungrounded sizing still flags. Validated on real transcripts. Suite now **146 green**.
+- **Opus 4.8 still blocked (issue #2).** Re-probed the ElevenLabs enum 2026-05-28 — `claude-opus-4-8` still 400s (enum tops out at the older set). In-place PATCH would upgrade with no churn the moment it's whitelisted (no need for `sync_agent.py`'s recreate). Retry in ~a week.
+- **Live now** via a backgrounded `start.sh` (tunnel `parenting-manufacturers-engagement-webcast` — ephemeral, dies on sleep/session-end; `relive.sh` brings it back). Branch `six-max-preflop-engine`, 3 commits, **not pushed** (your call).
 
 ### Changed this session (2026-05-28, evening)
 
