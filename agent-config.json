@@ -1,0 +1,202 @@
+{
+  "_comment": "ElevenLabs ConvAI agent config for Poker Buddy. Tool URLs include {BACKEND_URL} placeholder that the morning checklist replaces with your live Cloudflare Tunnel hostname.",
+
+  "agent": {
+    "name": "Poker Buddy",
+    "description": "Voice-first NLH cash poker discussion partner. Chill peer who happens to crush.",
+    "language": "en",
+    "first_message": "What spot you got for me?",
+    "llm": {
+      "provider": "anthropic",
+      "model": "claude-opus-4-7",
+      "extended_thinking": "adaptive",
+      "effort": "low",
+      "max_tokens": 250,
+      "prompt_caching": true
+    },
+    "voice": {
+      "provider": "elevenlabs",
+      "model": "eleven_flash_v2_5",
+      "voice_id_suggestion": "TX3LPaxmHKxFdv7VOQHJ",
+      "voice_name_suggestion": "Liam (or another chill male voice from your library)"
+    },
+    "system_prompt_file": "system-prompt.md"
+  },
+
+  "tools": [
+    {
+      "name": "preflop_lookup",
+      "description": "Look up a solver-verified preflop decision. HU spots return green/yellow confidence with action, frequency, sizing, principle. 6-max spots return amber + a note telling the agent to reason from theory rather than fabricate frequencies.",
+      "url": "{BACKEND_URL}/tools/preflop_lookup",
+      "method": "POST",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-Buddy-Secret": "{BUDDY_SHARED_SECRET}"
+      },
+      "parameters": {
+        "type": "object",
+        "required": ["format", "position", "hand"],
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": ["hu", "6max"],
+            "description": "Game format. 'hu' for heads-up, '6max' for six-max."
+          },
+          "position": {
+            "type": "string",
+            "description": "Position acting (btn, bb, sb, co, mp, utg)."
+          },
+          "hand": {
+            "type": "string",
+            "description": "Hand. Range notation like 'JTs' or 'AKo'; concrete cards like 'JhTh'."
+          },
+          "stack_depth_bb": {
+            "type": "number",
+            "description": "Stack depth in big blinds. Defaults to 100.",
+            "default": 100
+          },
+          "action_so_far": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Prior action this hand. Examples: ['btn_open_2.5'], ['btn_open_2.5', 'bb_3bet_9']."
+          }
+        }
+      }
+    },
+
+    {
+      "name": "postflop_lookup",
+      "description": "Look up a solver-verified flop c-bet decision for HU. Returns hand category, should-bet, frequency, sizing, principle. Six-max and HU turn/river return yellow or amber with a note for the agent to reason from theory.",
+      "url": "{BACKEND_URL}/tools/postflop_lookup",
+      "method": "POST",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-Buddy-Secret": "{BUDDY_SHARED_SECRET}"
+      },
+      "parameters": {
+        "type": "object",
+        "required": ["format", "hand", "board"],
+        "properties": {
+          "format": { "type": "string", "enum": ["hu", "6max"] },
+          "hand": {
+            "type": "string",
+            "description": "Concrete cards preferred for postflop (suits matter for flush draws). 'JhTh', 'KhQs'."
+          },
+          "board": {
+            "type": "string",
+            "description": "Board cards concatenated, e.g. 'Kh7d2c' (flop), 'Kh7d2c4s' (turn)."
+          },
+          "position": {
+            "type": "string",
+            "description": "Who is acting (btn/bb).",
+            "default": "btn"
+          },
+          "line": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Action across streets. ['btn_open_2.5', 'bb_call']."
+          },
+          "stack_depth_bb": { "type": "number", "default": 100 },
+          "is_4bet_pot": { "type": "boolean", "default": false }
+        }
+      }
+    },
+
+    {
+      "name": "theory_lookup",
+      "description": "BM25 search over the curated theory corpus (concepts, opponent types, board textures, HU vs six-max, stack-depth effects). Returns top-k chunks with titles, sources, and excerpts. Use when you need conceptual grounding rather than a specific frequency lookup.",
+      "url": "{BACKEND_URL}/tools/theory_lookup",
+      "method": "POST",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-Buddy-Secret": "{BUDDY_SHARED_SECRET}"
+      },
+      "parameters": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language query — concept, board type, opponent type, situation."
+          },
+          "k": {
+            "type": "integer",
+            "description": "Number of results. Default 3.",
+            "default": 3
+          }
+        }
+      }
+    },
+
+    {
+      "name": "memory_read",
+      "description": "Read Bill's persistent state, scoped by topic. Use at session start to learn stakes/goals; use during conversation to recall opponents, recent hands, or open leaks.",
+      "url": "{BACKEND_URL}/tools/memory_read",
+      "method": "POST",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-Buddy-Secret": "{BUDDY_SHARED_SECRET}"
+      },
+      "parameters": {
+        "type": "object",
+        "required": ["topic"],
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": ["profile", "recent_leaks", "opponents", "recent_hands", "session"]
+          }
+        }
+      }
+    },
+
+    {
+      "name": "memory_write",
+      "description": "Persist a piece of state. Use sparingly — when Bill identifies a leak, reports a new opponent, updates his stakes/goals, or wraps a session. Not every utterance is worth journaling.",
+      "url": "{BACKEND_URL}/tools/memory_write",
+      "method": "POST",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-Buddy-Secret": "{BUDDY_SHARED_SECRET}"
+      },
+      "parameters": {
+        "type": "object",
+        "required": ["kind", "content"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["hand_discussed", "leak_identified", "opponent_observation", "session_note", "profile_update"]
+          },
+          "content": {
+            "type": "object",
+            "description": "Free-form payload whose shape depends on kind. For hand_discussed: format, hand, position, board, action, takeaway, confidence. For leak_identified: description, severity. For profile_update: stakes, variants, study_goals. For session_note: summary, hands_discussed, update_latest. For opponent_observation: label, observation."
+          }
+        }
+      }
+    },
+
+    {
+      "name": "opponent_profile_update",
+      "description": "Upsert an opponent profile. Use whenever Bill names or describes a villain. The label is HIS nickname for them (never a real online ID).",
+      "url": "{BACKEND_URL}/tools/opponent_profile_update",
+      "method": "POST",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-Buddy-Secret": "{BUDDY_SHARED_SECRET}"
+      },
+      "parameters": {
+        "type": "object",
+        "required": ["label", "observation"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Bill's own nickname for this opponent."
+          },
+          "observation": {
+            "type": "string",
+            "description": "Free-text observation. Known opponent types (LAG, station, nit, maniac, etc.) are auto-detected into structured tags."
+          }
+        }
+      }
+    }
+  ]
+}

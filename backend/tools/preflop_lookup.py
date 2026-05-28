@@ -1,0 +1,123 @@
+"""preflop_lookup tool — routes to hu-poker-trainer for HU, returns honest
+amber for 6-max so the agent reasons from theory instead of fabricating.
+
+Tool contract (mirrors the JSON the ConvAI webhook receives):
+
+    {
+        "format": "hu" | "6max",
+        "position": "btn" | "bb" | "co" | "mp" | "utg" | "sb",
+        "hand": "JTs" | "JhTh" | ...,
+        "stack_depth_bb": 100,
+        "action_so_far": ["btn_open_2.5"]   # optional, list of strings
+    }
+
+Returns a dict the LLM can phrase into voice:
+
+    {
+        "data": {...} | None,
+        "confidence": "green" | "yellow" | "amber",
+        "source": "...",
+        "note": "..."  (only present on misses / amber)
+    }
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from backend.integrations import hu_trainer
+from backend.tools.confidence import Confidence
+
+
+def preflop_lookup(
+    format: str,
+    position: str,
+    hand: str,
+    stack_depth_bb: float = 100.0,
+    action_so_far: list[str] | None = None,
+) -> dict[str, Any]:
+    """Dispatch a preflop strategy lookup."""
+    fmt = format.lower().strip()
+    pos = position.lower().strip()
+    actions = [a.lower().strip() for a in (action_so_far or [])]
+
+    if fmt == "hu":
+        return _hu(pos, hand, stack_depth_bb, actions)
+    if fmt in ("6max", "6-max", "six_max", "sixmax"):
+        return _six_max_amber(pos, hand, actions)
+    return {
+        "data": None,
+        "confidence": Confidence.AMBER.value,
+        "source": "preflop_lookup",
+        "note": f"Format {format!r} not supported. Pass 'hu' or '6max'.",
+    }
+
+
+def _hu(
+    position: str, hand: str, stack_depth_bb: float, actions: list[str]
+) -> dict[str, Any]:
+    """Route to the right hu-poker-trainer engine based on action_so_far + position."""
+    try:
+        if not actions:
+            # No prior action.
+            # BTN acts first preflop in HU; BB only acts after an open.
+            if position == "btn":
+                return hu_trainer.preflop_btn_open(hand, stack_depth_bb)
+            return {
+                "data": None,
+                "confidence": Confidence.AMBER.value,
+                "source": "preflop_lookup (HU)",
+                "note": (
+                    f"In HU, BB doesn't act preflop until BTN opens. Pass "
+                    f"action_so_far=['btn_open_<size>'] if BTN opened."
+                ),
+            }
+
+        last = actions[-1]
+        # BB facing BTN open.
+        if last.startswith("btn_open") and position == "bb":
+            open_size = _parse_size_from_action(last, default=2.5)
+            return hu_trainer.preflop_bb_vs_open(hand, open_size, stack_depth_bb)
+
+        # No other HU preflop branches solver-verified in v1.
+        return {
+            "data": None,
+            "confidence": Confidence.YELLOW.value,
+            "source": "preflop_lookup (HU)",
+            "note": (
+                f"HU spot not in solver-verified set: {position} after {actions}. "
+                "Reason from BTN/BB ranges + opponent profile."
+            ),
+        }
+    except Exception as exc:
+        return {
+            "data": None,
+            "confidence": Confidence.AMBER.value,
+            "source": "preflop_lookup (HU)",
+            "note": f"Lookup failed ({type(exc).__name__}: {exc}). Reason from theory.",
+        }
+
+
+def _six_max_amber(position: str, hand: str, actions: list[str]) -> dict[str, Any]:
+    """6-max has no solver-verified engine yet. Honest amber + a hint."""
+    return {
+        "data": None,
+        "confidence": Confidence.AMBER.value,
+        "source": "preflop_lookup (6max)",
+        "note": (
+            f"No solver-verified 6-max engine yet. For {position.upper()} with {hand} "
+            f"after {actions or 'no prior action'}, reason from published 6-max "
+            "ranges (Upswing / GTO Wizard) and flag confidence verbally."
+        ),
+    }
+
+
+def _parse_size_from_action(action: str, default: float) -> float:
+    """'btn_open_2.5' → 2.5. Defensive parsing — fall back to default on weird input."""
+    parts = action.split("_")
+    if len(parts) >= 3:
+        try:
+            return float(parts[-1])
+        except ValueError:
+            pass
+    return default
