@@ -18,12 +18,16 @@ ElevenLabs ConvAI agent (handles voice + Anthropic Opus 4.7) calls six tool webh
 
 ```bash
 uv sync                  # install deps into .venv
-cp .env.example .env     # fill in ANTHROPIC_API_KEY etc.
-uv run pytest            # verify everything passes
-./scripts/start.sh       # run server + Cloudflare tunnel
+cp .env.example .env     # fill in ANTHROPIC_API_KEY, ELEVENLABS_API_KEY
+uv run pytest            # verify everything passes (91 tests)
+./scripts/start.sh       # backend + Cloudflare tunnel (writes BACKEND_URL to .env)
+.venv/bin/python scripts/sync_agent.py   # create the ConvAI agent + 6 tools
+./scripts/wire-agent.sh <agent-id>       # point the PWA at it (id printed above)
 ```
 
 Open `frontend/index.html` (or deploy to GitHub Pages) and tap the widget.
+
+**After a Mac sleep/restart:** `./scripts/relive.sh` brings the *same* agent back live in one command — no re-sync, no re-wire, no orphan agents. **Grade your sessions:** `.venv/bin/python scripts/grade_transcripts.py`.
 
 ## File layout
 
@@ -31,6 +35,7 @@ Open `frontend/index.html` (or deploy to GitHub Pages) and tap the widget.
 backend/
   main.py                  FastAPI app with 6 tool endpoints
   db.py                    SQLite schema + migrations
+  grader.py                Transcript-grader core (flags ungrounded GTO numbers)
   integrations/
     hu_trainer.py          Import shim for ~/hu-poker-trainer
   tools/
@@ -44,7 +49,13 @@ frontend/                  PWA shell (ElevenLabs widget)
 tests/                     pytest suite + eval set
 system-prompt.md           Paste-ready ConvAI system prompt
 agent-config.json          Paste-ready ConvAI tool definitions
-scripts/start.sh           Launch backend + Cloudflare tunnel
+scripts/
+  start.sh                 Launch backend + Cloudflare tunnel (writes BACKEND_URL)
+  sync_agent.py            Create the ConvAI agent + 6 tools (fresh agent)
+  update_agent.py          Update the LIVE agent in place — prompt + tool URLs, same id
+  relive.sh                Post-restart: one command, no agent churn
+  wire-agent.sh            Point the PWA at an agent id
+  grade_transcripts.py     Pull ConvAI history → grade against the trust rule
 ```
 
 ## Status
