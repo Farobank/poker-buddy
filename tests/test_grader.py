@@ -164,6 +164,20 @@ def test_normalize_amber_not_grounded():
     assert turns[0]["grounded"] is False
 
 
+def test_normalize_yellow_without_data_not_grounded():
+    """HU turn/river return confidence=yellow but data=None (no number). That
+    must NOT count as grounding — otherwise the grader blesses a fabricated
+    turn number on the exact streets the trust rule is meant to protect."""
+    raw = {"transcript": [
+        {"role": "agent", "message": "on the turn I'm firing about sixty percent",
+         "tool_calls": [{"tool_name": "postflop_lookup"}],
+         "tool_results": [{"tool_name": "postflop_lookup",
+                           "result_value": '{"confidence":"yellow","data":null}'}]},
+    ]}
+    turns = normalize_transcript(raw)
+    assert turns[0]["grounded"] is False
+
+
 def test_normalize_grounding_carries_to_next_agent_turn():
     raw = {"transcript": [
         {"role": "user", "message": "BTN opens, JTs in BB"},

@@ -71,26 +71,30 @@ def grade_transcript(turns: list[dict]) -> list[Violation]:
     return violations
 
 
-def _confidence_of(payload) -> str:
+def _parse_result(payload) -> tuple[str, object]:
+    """Extract (confidence, data) from a tool-result payload (JSON string or dict)."""
     if isinstance(payload, str):
         try:
             payload = json.loads(payload)
         except (ValueError, TypeError):
-            return ""
+            return "", None
     if isinstance(payload, dict):
-        return str(payload.get("confidence", "")).lower()
-    return ""
+        return str(payload.get("confidence", "")).lower(), payload.get("data")
+    return "", None
 
 
 def _lookup_returned_number(entry: dict) -> bool:
-    """True if a preflop/postflop lookup in this entry returned green/yellow
-    data. Amber (no number) does NOT count as grounding."""
+    """True only if a preflop/postflop lookup in this entry returned an actual
+    number — green/yellow confidence AND non-null data. A yellow-but-dataless
+    response (HU turn/river, HU flop non-c-bet) carries no frequency, so it must
+    NOT ground a stated number — that's exactly where the buddy is prone to make
+    a number up."""
     for r in entry.get("tool_results") or []:
         name = r.get("tool_name") or r.get("name") or ""
         if name not in _LOOKUP_TOOLS:
             continue
-        payload = r.get("result_value", r.get("result", ""))
-        if _confidence_of(payload) in ("green", "yellow"):
+        conf, data = _parse_result(r.get("result_value", r.get("result", "")))
+        if conf in ("green", "yellow") and data is not None:
             return True
     return False
 

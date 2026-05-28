@@ -2,8 +2,8 @@
 # Poker Buddy — local launcher.
 #
 # Boots the FastAPI backend on $BUDDY_PORT and a Cloudflare Quick Tunnel
-# pointing at it. Prints the public URL you paste into agent-config.json
-# (replace {BACKEND_URL}) before pasting into the ElevenLabs ConvAI dashboard.
+# pointing at it, then writes the tunnel URL into .env as BACKEND_URL so
+# sync_agent.py can wire the agent's tools to it.
 #
 # Usage:
 #   ./scripts/start.sh
@@ -107,7 +107,7 @@ python3 - "$PUBLIC_URL" <<'PY'
 import sys, pathlib
 url = sys.argv[1]
 env = pathlib.Path(".env")
-lines = env.read_text().split("\n") if env.exists() else []
+lines = env.read_text().splitlines() if env.exists() else []
 out, found = [], False
 for ln in lines:
     if ln.startswith("BACKEND_URL="):
@@ -116,7 +116,7 @@ for ln in lines:
         out.append(ln)
 if not found:
     out.append(f"BACKEND_URL={url}")
-env.write_text("\n".join(out))
+env.write_text("\n".join(out) + "\n")
 PY
 echo "✓ wrote BACKEND_URL=$PUBLIC_URL to .env"
 
