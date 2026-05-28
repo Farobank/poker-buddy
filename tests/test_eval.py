@@ -343,3 +343,18 @@ def test_hu_small_blind_postflop_is_in_position(client):
     body = r.json()
     assert body["data"] is not None, "HU SB c-bet must return data (SB == BTN), not yellow/None"
     assert body["data"].get("should_bet") is True
+
+
+def test_hu_button_vs_3bet_is_solver_grounded(client):
+    """Facing a BB 3-bet, the BTN/SB has a solver-verified 4-bet/call/fold
+    decision (the trainer's button_vs_3bet_decision). It must come back grounded
+    instead of falling through to a guess. AKs is a pure 4-bet for value."""
+    r = client.post("/tools/preflop_lookup", json={
+        "format": "hu", "position": "btn", "hand": "AKs",
+        "action_so_far": ["btn_open_2.5", "bb_3bet_10"],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["confidence"] in ("green", "yellow"), body
+    assert body["data"] is not None, "facing a 3-bet must return grounded data, not a guess"
+    assert body["data"].get("action"), "the 4-bet/call/fold decision must be present"

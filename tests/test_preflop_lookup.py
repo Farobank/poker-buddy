@@ -50,10 +50,11 @@ def test_hu_open_with_explicit_size_parses():
 
 
 def test_unsupported_hu_spot_returns_yellow():
-    # 3-bet pot is not v1-supported; we get yellow with a note.
+    # BB facing a 4-bet is not v1-supported; we get yellow with a note.
+    # (BTN/SB facing a 3-bet IS now supported — see the 3-bet test in test_eval.py.)
     r = preflop_lookup(
-        "hu", "btn", "AA",
-        action_so_far=["btn_open_2.5", "bb_3bet_9"],
+        "hu", "bb", "AA",
+        action_so_far=["btn_open_2.5", "bb_3bet_9", "btn_4bet_21"],
     )
     assert r["data"] is None
     assert r["confidence"] == Confidence.YELLOW.value

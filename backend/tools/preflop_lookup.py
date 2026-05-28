@@ -79,6 +79,11 @@ def _hu(
             open_size = _parse_size_from_action(last, default=2.5)
             return hu_trainer.preflop_bb_vs_open(hand, open_size, stack_depth_bb)
 
+        # BTN/SB facing a BB 3-bet (4-bet / call / fold).
+        if last.startswith("bb_3bet") and position in ("btn", "sb"):
+            three_bet_size = _parse_size_from_action(last, default=8.0)
+            return hu_trainer.preflop_btn_vs_3bet(hand, three_bet_size, stack_depth_bb)
+
         # No other HU preflop branches solver-verified in v1.
         return {
             "data": None,

@@ -124,6 +124,15 @@ def preflop_bb_vs_open(
     return _serialize_preflop(decision)
 
 
+def preflop_btn_vs_3bet(
+    notation: str, three_bet_size_bb: float = 8.0, stack_depth_bb: float = 100.0
+) -> dict[str, Any]:
+    """HU BTN/SB decision facing a BB 3-bet (4-bet / call / fold)."""
+    c1, c2 = cards_from_notation(notation)
+    decision = _preflop.button_vs_3bet_decision(c1, c2, three_bet_size_bb, stack_depth_bb)
+    return _serialize_preflop(decision)
+
+
 def board_classification(board_str: str, is_4bet_pot: bool = False) -> dict[str, Any]:
     """Flop classification: texture, c-bet frequency, sizing, range advantage."""
     cards = parse_board(board_str)
