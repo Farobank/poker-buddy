@@ -34,6 +34,19 @@ _SIZING = re.compile(
 # grounding (the agent must SPEAK it spelled-out).
 _DIGIT_PERCENT = re.compile(r"\b\d{1,3}\s*%|\b\d{1,3}\s*percent\b", re.I)
 
+# Villain-action attribution: a sizing/percent that follows "he/they/villain …
+# bet/led/raised/…" is the agent NARRATING the opponent's bet (part of the hand
+# being discussed), not a GTO number the agent invented. Don't count it as a
+# fabrication. Scoped to a short preceding window so the agent's own later
+# sizing in the same turn still gets flagged.
+_VILLAIN_BET = re.compile(
+    r"\b(?:he|she|they|villain|opp\w*|opponent|guy|reg|player|fish|nit|maniac)\b"
+    r"[^.?!]{0,30}?\b(?:bet|bets|betting|led|lead|leads|leading|rais\w+|jam\w*|"
+    r"shov\w+|fir\w+|bomb\w*|donk\w*|barrel\w*|over\s?bet\w*|stab\w*|"
+    r"check[\s-]?rais\w+)\b",
+    re.I,
+)
+
 _MAX_WORDS = 60
 _LOOKUP_TOOLS = {"preflop_lookup", "postflop_lookup"}
 
@@ -47,7 +60,15 @@ class Violation:
 
 
 def _has_number_claim(text: str) -> bool:
-    return bool(_PERCENT.search(text) or _SIZING.search(text))
+    """True if the text states a pot-fraction or percentage that is the agent's
+    OWN number. Sizings narrated as the villain's bet ("he led half pot") are
+    the hand being discussed, not a fabricated stat, so they don't count."""
+    for m in list(_PERCENT.finditer(text)) + list(_SIZING.finditer(text)):
+        preceding = text[max(0, m.start() - 40):m.start()]
+        if _VILLAIN_BET.search(preceding):
+            continue  # villain's bet, narrated — not the agent's claim
+        return True
+    return False
 
 
 def grade_transcript(turns: list[dict]) -> list[Violation]:

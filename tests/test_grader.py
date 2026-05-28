@@ -88,6 +88,25 @@ def test_stack_depth_allowed():
     assert v == []
 
 
+def test_villain_bet_narration_not_flagged():
+    """Narrating the villain's bet ('he leads half pot') is the hand being
+    discussed, not a fabricated stat — it must not trip the critical rule."""
+    v = grade_transcript([
+        agent("River pairs the board, he leads tiny, half pot ish, after checking twice. "
+              "No solver data on rivers, just my read: I'm calling, great price.")
+    ])
+    assert not any(x.rule == "fabricated_number" for x in v)
+
+
+def test_buddy_own_sizing_still_flagged_alongside_villain_narration():
+    """The villain guard is scoped: the agent's OWN recommended sizing in the
+    same turn is still a fabrication, even if a villain bet was narrated too."""
+    v = grade_transcript([
+        agent("He bet half pot, and my read is I'm raising to full pot here")
+    ])
+    assert any(x.rule == "fabricated_number" for x in v)
+
+
 # ---------------------------------------------------------------------------
 # Voice formatting — length + spell-out
 # ---------------------------------------------------------------------------
