@@ -315,3 +315,31 @@ def test_discipline_trust_block_and_coverage_map():
         "prompt must name the leak streets (turn/river)"
     assert "yellow" in sys_prompt and "amber" in sys_prompt, \
         "coverage map must distinguish yellow (HU turn/river) from amber (6-max)"
+
+
+# ---------------------------------------------------------------------------
+# HU small-blind == button (audit finding): naming the seat 'sb' must work
+# ---------------------------------------------------------------------------
+
+def test_hu_small_blind_open_routes_like_button(client):
+    """In heads-up the Small Blind IS the Button (acts first preflop). A query
+    naming the seat 'sb' must get the solver-verified open, not amber."""
+    r = client.post("/tools/preflop_lookup", json={"format": "hu", "position": "sb", "hand": "AKs"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["confidence"] in ("green", "yellow"), body
+    assert body["data"] is not None, "HU SB open must return solver data (SB == BTN), not amber"
+    assert body["data"].get("action") == "raise"
+
+
+def test_hu_small_blind_postflop_is_in_position(client):
+    """HU SB is the button = in position on the flop, so an SB c-bet query on a
+    dry board must return a real c-bet decision, not the 'not the c-bet branch'."""
+    r = client.post("/tools/postflop_lookup", json={
+        "format": "hu", "hand": "AhKd", "board": "Kh7d2c",
+        "position": "sb", "line": ["btn_open_2.5", "bb_call"],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["data"] is not None, "HU SB c-bet must return data (SB == BTN), not yellow/None"
+    assert body["data"].get("should_bet") is True

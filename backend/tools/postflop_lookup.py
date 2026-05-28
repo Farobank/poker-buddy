@@ -76,7 +76,7 @@ def _hu(
                 "board_hint": _board_only(board, is_4bet_pot),
             }
 
-        is_ip = position == "btn"  # In HU, BTN is IP on the flop.
+        is_ip = position in ("btn", "sb")  # In HU the BTN/SB is IP on the flop.
         return hu_trainer.cbet_for_hand(
             hand, board, is_ip=is_ip, is_4bet_pot=is_4bet_pot
         )
@@ -138,7 +138,7 @@ def _is_flop_cbet_spot(position: str, line: list[str]) -> bool:
     checks to BTN on the flop, BTN c-bets too. We treat both as c-bet spots.
     Anything more exotic (3-bet pots, donk-leads) falls to yellow.
     """
-    if position != "btn":
+    if position not in ("btn", "sb"):
         return False
     if not line:
         return False

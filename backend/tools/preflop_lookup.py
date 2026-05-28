@@ -61,7 +61,7 @@ def _hu(
         if not actions:
             # No prior action.
             # BTN acts first preflop in HU; BB only acts after an open.
-            if position == "btn":
+            if position in ("btn", "sb"):  # HU: the SB posts the button and acts first preflop
                 return hu_trainer.preflop_btn_open(hand, stack_depth_bb)
             return {
                 "data": None,
