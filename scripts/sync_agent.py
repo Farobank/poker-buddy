@@ -209,13 +209,14 @@ def main() -> None:
     load_dotenv(ENV_FILE)
     api_key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
     secret = os.environ.get("BUDDY_SHARED_SECRET", "").strip()
-    backend_url = os.environ.get("BACKEND_URL", "").strip() or \
-        "https://incorporated-ceiling-launch-brochure.trycloudflare.com"
+    backend_url = os.environ.get("BACKEND_URL", "").strip()
 
     if not api_key:
         sys.exit("❌ ELEVENLABS_API_KEY missing in .env. Get one at https://elevenlabs.io/app/settings/api-keys → Create a new key (with ConvAI Create+Edit permissions).")
     if not secret:
         sys.exit("❌ BUDDY_SHARED_SECRET missing in .env.")
+    if not backend_url:
+        sys.exit("❌ BACKEND_URL missing in .env. Run ./scripts/start.sh first — it boots the backend and writes the live tunnel URL into .env. (Wiring tools to a stale URL would silently break every tool call.)")
 
     prompt_text = (PROJECT_ROOT / "system-prompt.md").read_text().strip()
     if not prompt_text:

@@ -100,6 +100,26 @@ if [[ -z "$PUBLIC_URL" ]]; then
   exit 1
 fi
 
+# --- persist the live tunnel URL so sync_agent.py wires tools to it ---------
+# Without this, sync_agent has no BACKEND_URL and (pre-fix) silently wired the
+# agent's tools to a dead hardcoded tunnel. Write it idempotently.
+python3 - "$PUBLIC_URL" <<'PY'
+import sys, pathlib
+url = sys.argv[1]
+env = pathlib.Path(".env")
+lines = env.read_text().split("\n") if env.exists() else []
+out, found = [], False
+for ln in lines:
+    if ln.startswith("BACKEND_URL="):
+        out.append(f"BACKEND_URL={url}"); found = True
+    else:
+        out.append(ln)
+if not found:
+    out.append(f"BACKEND_URL={url}")
+env.write_text("\n".join(out))
+PY
+echo "✓ wrote BACKEND_URL=$PUBLIC_URL to .env"
+
 # --- ready ------------------------------------------------------------------
 cat <<EOF
 
@@ -110,8 +130,8 @@ cat <<EOF
 ║  Public:   $PUBLIC_URL
 ╚══════════════════════════════════════════════════════════════════╝
 
-Paste $PUBLIC_URL into agent-config.json everywhere it says {BACKEND_URL},
-then paste agent-config.json into the ElevenLabs ConvAI dashboard.
+BACKEND_URL is now set in .env. Point the agent at this backend by running:
+  .venv/bin/python scripts/sync_agent.py   (then run the wire-agent.sh line it prints)
 
 Logs:
   $BACKEND_LOG
