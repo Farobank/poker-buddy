@@ -71,30 +71,28 @@ Both 30-second tasks. See "Security rotation" section below for commands.
 - Native iOS app if PWA UX caps out
 - 6-max strategy engine (separate research project — weeks)
 - Postflop solver integration via `~/poker_solver` (pre-solve common spots → local cache)
-- Named Cloudflare tunnel (stable URL — no re-sync on every restart)
+- Stable URL (named Cloudflare tunnel *needs a domain*, or ngrok's free static domain) → zero-command restart. `relive.sh` already makes restarts one command + churn-free, so this is just polish. Needs a domain or an ngrok account (your input).
 - Proactive leak surfacing (*"you've punted three river bets in 3-bet pots OOP this week"*)
 
 ## How to resume work
 
-If the tunnels died (cmux closed, mac rebooted, etc.), bring them back:
+After a Mac sleep / cmux close the trycloudflare URL changes. **One command brings the buddy back with no churn** — same agent id, no re-sync, no frontend re-wire, no orphan agents:
 
 ```bash
-# Backend + its tunnel
-cd ~/projects/poker-buddy && ./scripts/start.sh
+cd ~/projects/poker-buddy && ./scripts/relive.sh
+```
 
-# Frontend + its tunnel (separate terminal)
+It stops any stale backend+tunnel, boots a fresh one, and re-points the existing agent's tools at the new URL *in place* (`update_agent.py`). Verified end-to-end: agent id stays put, tools repoint, a live tool call returns green.
+
+Edited `system-prompt.md` and just want to push the prompt to the live agent (backend already up)? Run `./scripts/update_agent.py` on its own.
+
+Frontend PWA (separate, optional — the dashboard chat widget works without it):
+```bash
 cd ~/projects/poker-buddy/frontend && python3 -m http.server 5173 &
 cloudflared tunnel --no-autoupdate --url http://127.0.0.1:5173
 ```
 
-Each prints a new `*.trycloudflare.com` URL. `start.sh` now writes the backend tunnel URL into `.env` as `BACKEND_URL` automatically, so re-syncing the agent is just:
-
-```bash
-cd ~/projects/poker-buddy && .venv/bin/python scripts/sync_agent.py
-./scripts/wire-agent.sh <new-agent-id>   # run the exact line sync_agent.py prints
-```
-
-Then reload the PWA on the phone (it's a static page hitting the new agent).
+**Only use `sync_agent.py` when you deliberately want a brand-new agent** (it deletes + recreates → new id → frontend re-wire → orphans). For normal restarts, `relive.sh` is the move.
 
 ## Security rotation
 
@@ -127,7 +125,9 @@ https://elevenlabs.io/app/settings/api-keys → create new → paste into `.env`
 | `system-prompt.md` | The ConvAI agent's system prompt (paste-ready, no preamble) |
 | `scripts/sync_agent.py` | One-shot agent + tools via ElevenLabs API |
 | `scripts/wire-agent.sh` | Patch frontend with agent ID |
-| `scripts/start.sh` | Boot backend + Cloudflare tunnel |
+| `scripts/start.sh` | Boot backend + Cloudflare tunnel (auto-writes BACKEND_URL) |
+| `scripts/relive.sh` | **Post-restart: one command, no agent churn** (start + update in place) |
+| `scripts/update_agent.py` | Update the LIVE agent in place — prompt + tool URLs, same id, self-verifying |
 | `tests/test_eval.py` | 10 canonical spot tests + 3 discipline checks |
 | `backend/grader.py` | Transcript grader core (pure; flags ungrounded numbers) |
 | `scripts/grade_transcripts.py` | CLI: pull ConvAI history → grade → report |
@@ -137,17 +137,12 @@ https://elevenlabs.io/app/settings/api-keys → create new → paste into `.env`
 
 ## What I'd do in the next session
 
-In priority order:
+The agent is live and clean as of 2026-05-28: **`agent_8001ksqwswrme5s9kpvfw667t828`** — Opus 4.7, Eric voice, 6 tools on the live backend, hardened prompt (all verified via API). Churn is solved (`relive.sh`). What's left:
 
-1. **Go live to test the hardened prompt.** The backend may still be up from 2026-05-28 (tunnel URLs die on sleep). If `curl -sf http://127.0.0.1:8765/health` fails, re-run `./scripts/start.sh`. Then push the new prompt + point tools at the live backend in one shot — this also rotates the secret (issue #3):
-   ```bash
-   # rotate the shared secret (kills the old one everywhere) THEN re-sync:
-   python3 -c "import secrets; print(secrets.token_urlsafe(32))" | \
-     xargs -I{} sed -i '' "s|^BUDDY_SHARED_SECRET=.*|BUDDY_SHARED_SECRET={}|" .env
-   .venv/bin/python scripts/sync_agent.py     # deletes+recreates the agent, prints new id
-   ./scripts/wire-agent.sh <new-agent-id>     # patches the frontend
-   ```
-   Reload the PWA, then do one voice round-trip on a postflop turn / 6-max spot — the exact place the prompt fix targets.
-2. **Grade the conversation.** `.venv/bin/python scripts/grade_transcripts.py --limit 5` after dogfooding. Zero critical = the trust rule held. Re-validate the grader's grounding detection against the first transcript that fires a lookup (see caveat above).
-3. **Rotate the ElevenLabs API key** (dashboard-only — it was pasted in chat). Delete → create → paste into `.env`. Heads-up: this breaks `sync_agent.py` + the grader until you paste the new key.
-4. **Bump to Opus 4.8** the moment ElevenLabs whitelists it (issue #2).
+1. **Live-test the buddy** — the one thing not yet confirmed by a real conversation. If `curl -sf http://127.0.0.1:8765/health` fails (Mac slept), run `./scripts/relive.sh`. Then in the ElevenLabs dashboard chat on `agent_8001…` (Mock tools OFF), or the PWA: try a HU preflop (should cite real solver data) and a turn / 6-max spot (should say *"no solver data, my read is…"* — the fix in action).
+2. **Grade it.** `.venv/bin/python scripts/grade_transcripts.py --limit 5` after talking to it. Zero critical = the trust rule held under real voice pressure. Re-validate the grader's grounding detection against the first transcript that actually fires a tool (caveat above).
+3. **Dashboard cleanup.** Keep `agent_8001…`; delete the empty "Poker Buddy" `agent_4001ksqf…` and (if you're done with it) the talk-to-docs "My Agent". A few old tools may linger — force-delete in the Tools tab or ignore.
+4. **Finish the key rotation.** The new ElevenLabs key is in `.env` and working, but the OLD key is still enabled in the dashboard — disable/delete it so the rotation counts. (Keep keys in `.env`, not chat.)
+5. **Push** the local commits when ready (`git push`).
+6. **Optional polish:** a stable URL (ngrok free static domain, or a Cloudflare domain) → *zero*-command restart. `relive.sh` already makes it one command + churn-free, so this is gravy.
+7. **Opus 4.8** the moment ElevenLabs whitelists it (issue #2).

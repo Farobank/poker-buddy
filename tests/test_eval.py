@@ -300,3 +300,18 @@ def test_discipline_no_gto_frequencies_from_memory():
     assert "gto" in sys_prompt
     assert "preflop_lookup" in sys_prompt or "tool" in sys_prompt
     assert "never" in sys_prompt or "must" in sys_prompt
+
+
+def test_discipline_trust_block_and_coverage_map():
+    """The front-loaded 'one rule that matters most' block + an accurate
+    coverage map are what closed the postflop fabrication leak. Guard them
+    from silent removal: the block must exist, the leak streets must be named,
+    and the prompt must distinguish yellow (HU turn/river) from amber (6-max) —
+    calling turn/river 'amber' was a real bug we fixed."""
+    sys_prompt = (PROJECT_ROOT / "system-prompt.md").read_text().lower()
+    assert "one rule that matters most" in sys_prompt, \
+        "the front-loaded trust block must stay in the prompt"
+    assert "turn" in sys_prompt and "river" in sys_prompt, \
+        "prompt must name the leak streets (turn/river)"
+    assert "yellow" in sys_prompt and "amber" in sys_prompt, \
+        "coverage map must distinguish yellow (HU turn/river) from amber (6-max)"
