@@ -30,7 +30,7 @@ API_BASE = "https://api.elevenlabs.io/v1"
 # DESIGN.md suggestion — chill male voice. Bill can swap in the dashboard later.
 DEFAULT_VOICE_ID = "TX3LPaxmHKxFdv7VOQHJ"  # Liam
 DEFAULT_TTS_MODEL = "eleven_flash_v2"  # English ConvAI agents only accept turbo/flash v2 (no v2.5)
-LLM_MODEL = "claude-opus-4-7"
+LLM_MODEL = "claude-opus-4-7"  # ElevenLabs ConvAI hasn't whitelisted 4-8 yet (verified 2026-05-28, 422 enum error)
 
 
 # ---------------------------------------------------------------------------
