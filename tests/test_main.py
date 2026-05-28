@@ -16,6 +16,10 @@ def client(monkeypatch):
     """Spin up a TestClient with an isolated DB per test."""
     with tempfile.TemporaryDirectory() as d:
         monkeypatch.setenv("BUDDY_DB_PATH", str(Path(d) / "test.db"))
+        # Disable auth middleware for the rest of the tests; the dedicated
+        # test_shared_secret_blocks_when_set test re-enables it explicitly.
+        # Set to "" not delenv because load_dotenv() will repopulate from .env.
+        monkeypatch.setenv("BUDDY_SHARED_SECRET", "")
         # Reload db + memory + main so they pick up the env var.
         import importlib
         import backend.db as db_mod

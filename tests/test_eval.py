@@ -30,6 +30,9 @@ import pytest
 def client(monkeypatch):
     with tempfile.TemporaryDirectory() as d:
         monkeypatch.setenv("BUDDY_DB_PATH", str(Path(d) / "eval.db"))
+        # Disable auth middleware for in-process tests. Set to "" not delenv
+        # because main.py runs load_dotenv() which would repopulate from .env.
+        monkeypatch.setenv("BUDDY_SHARED_SECRET", "")
         import importlib
         import backend.db as db_mod
         importlib.reload(db_mod)
