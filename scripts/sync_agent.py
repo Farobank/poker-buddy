@@ -29,7 +29,7 @@ API_BASE = "https://api.elevenlabs.io/v1"
 
 # DESIGN.md suggestion — chill male voice. Bill can swap in the dashboard later.
 DEFAULT_VOICE_ID = "TX3LPaxmHKxFdv7VOQHJ"  # Liam
-DEFAULT_TTS_MODEL = "eleven_flash_v2_5"
+DEFAULT_TTS_MODEL = "eleven_flash_v2"  # English ConvAI agents only accept turbo/flash v2 (no v2.5)
 LLM_MODEL = "claude-opus-4-7"
 
 
@@ -238,7 +238,8 @@ def main() -> None:
         print(f"→ Deleting previous agent {prev_agent_id}...")
         _delete(api_key, f"/convai/agents/{prev_agent_id}")
 
-    # Create tools
+    # Create tools — persist IDs progressively so a failure mid-stream still
+    # leaves a clean cleanup state in .env.
     tool_configs = make_tools(backend_url, secret)
     tool_ids: list[str] = []
     print(f"→ Creating {len(tool_configs)} tools...")
@@ -246,9 +247,11 @@ def main() -> None:
         resp = _post(api_key, "/convai/tools", {"tool_config": tc})
         tid = resp.get("id") or resp.get("tool_id")
         if not tid:
+            _update_env("ELEVENLABS_TOOL_IDS", ",".join(tool_ids))
             sys.exit(f"❌ tool response had no id: {resp}")
         print(f"   ✓ {tc['name']} → {tid}")
         tool_ids.append(tid)
+        _update_env("ELEVENLABS_TOOL_IDS", ",".join(tool_ids))
 
     # Create agent
     print(f"→ Creating agent...")
