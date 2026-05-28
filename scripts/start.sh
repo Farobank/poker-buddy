@@ -121,5 +121,8 @@ Ctrl-C to stop.
 
 EOF
 
-# block until either child dies (Ctrl-C falls through trap)
-wait -n "$BACKEND_PID" "$TUNNEL_PID"
+# block until either child dies (Ctrl-C falls through the trap).
+# Poll instead of `wait -n` because macOS ships bash 3.2 which doesn't have it.
+while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$TUNNEL_PID" 2>/dev/null; do
+  sleep 2
+done
