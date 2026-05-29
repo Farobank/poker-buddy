@@ -107,6 +107,22 @@ def test_buddy_own_sizing_still_flagged_alongside_villain_narration():
     assert any(x.rule == "fabricated_number" for x in v)
 
 
+def test_villain_narration_long_recap_not_flagged():
+    """A natural hand recap pushes the sizing well past a fixed lookback window;
+    the villain guard must still attribute it (audit: 40 vs 30-char mismatch)."""
+    v = grade_transcript([
+        agent("he leads out on the river for what looks like about half pot")
+    ])
+    assert not any(x.rule == "fabricated_number" for x in v)
+
+
+def test_villain_narration_with_long_pronoun_verb_gap_not_flagged():
+    v = grade_transcript([
+        agent("villain checks twice then on the river finally bets half pot")
+    ])
+    assert not any(x.rule == "fabricated_number" for x in v)
+
+
 # ---------------------------------------------------------------------------
 # Voice formatting — length + spell-out
 # ---------------------------------------------------------------------------

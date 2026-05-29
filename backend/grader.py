@@ -41,9 +41,18 @@ _DIGIT_PERCENT = re.compile(r"\b\d{1,3}\s*%|\b\d{1,3}\s*percent\b", re.I)
 # sizing in the same turn still gets flagged.
 _VILLAIN_BET = re.compile(
     r"\b(?:he|she|they|villain|opp\w*|opponent|guy|reg|player|fish|nit|maniac)\b"
-    r"[^.?!]{0,30}?\b(?:bet|bets|betting|led|lead|leads|leading|rais\w+|jam\w*|"
+    r"[^.?!]{0,40}?\b(?:bet|bets|betting|led|lead|leads|leading|rais\w+|jam\w*|"
     r"shov\w+|fir\w+|bomb\w*|donk\w*|barrel\w*|over\s?bet\w*|stab\w*|"
     r"check[\s-]?rais\w+)\b",
+    re.I,
+)
+
+# The AGENT's own action. If one of these appears between a narrated villain bet
+# and a sizing, the sizing is the agent's recommendation (a fabrication), not the
+# villain's bet — so the villain guard must NOT exempt it.
+_HERO_ACTION = re.compile(
+    r"\b(?:i|me|my|we|hero|rais\w+|call\w*|jam\w*|shov\w+|bett?ing|sizing|"
+    r"recommend\w*|go|going)\b",
     re.I,
 )
 
@@ -61,12 +70,21 @@ class Violation:
 
 def _has_number_claim(text: str) -> bool:
     """True if the text states a pot-fraction or percentage that is the agent's
-    OWN number. Sizings narrated as the villain's bet ("he led half pot") are
-    the hand being discussed, not a fabricated stat, so they don't count."""
+    OWN number. Sizings narrated as the villain's bet ("he led half pot") are the
+    hand being discussed, not a fabricated stat, so they don't count.
+
+    The villain exemption is scoped by MEANING, not a fixed character window: a
+    sizing is the villain's only if a narrated villain bet precedes it AND no
+    agent action ("I'm raising", "my sizing") intervenes between them. This avoids
+    both the old false-positive (a long recap pushed the bet past a 40-char window)
+    and the false-negative (the agent's own sizing after a villain bet escaping)."""
     for m in list(_PERCENT.finditer(text)) + list(_SIZING.finditer(text)):
-        preceding = text[max(0, m.start() - 40):m.start()]
-        if _VILLAIN_BET.search(preceding):
-            continue  # villain's bet, narrated — not the agent's claim
+        preceding = text[:m.start()]
+        villain_matches = list(_VILLAIN_BET.finditer(preceding))
+        if villain_matches:
+            gap = preceding[villain_matches[-1].end():]
+            if not _HERO_ACTION.search(gap):
+                continue  # villain's bet, narrated — not the agent's claim
         return True
     return False
 

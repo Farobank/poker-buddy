@@ -125,3 +125,34 @@ def test_session_note_creates_session_then_updates():
     memory_write("session_note", {"update_latest": True, "hands_discussed": 5})
     r = memory_read("session")
     assert r["data"]["hands_discussed"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Robustness (audit): never crash mid-conversation; never report a save that
+# didn't happen; never silently corrupt a field's type.
+# ---------------------------------------------------------------------------
+
+def test_memory_write_malformed_content_returns_note_not_crash():
+    # A content value SQLite can't bind (a dict where a scalar is expected) used
+    # to raise -> HTTP 500 mid-spot. It must degrade to an honest {ok:False, note}.
+    from backend.tools.memory import memory_write
+    r = memory_write("session_note", {"hands_discussed": {"nested": 1}, "summary": "x"})
+    assert r["ok"] is False
+    assert r["note"]
+
+
+def test_opponent_observation_missing_field_reports_not_ok():
+    # Missing label/observation skipped the upsert but still returned ok:True —
+    # the buddy believed it logged a read it actually dropped.
+    from backend.tools.memory import memory_read, memory_write
+    r = memory_write("opponent_observation", {"label": "Ghost"})  # no observation
+    assert r["ok"] is False
+    assert all(o["label"] != "Ghost" for o in memory_read("opponents")["data"])
+
+
+def test_profile_update_coerces_scalar_variant_to_list():
+    # variants sent as a bare string round-tripped to the wrong type (a string,
+    # not a list). Coerce so memory_read always returns a list.
+    from backend.tools.memory import memory_read, memory_write
+    memory_write("profile_update", {"stakes": "$1/$2", "variants": "hu_cash"})
+    assert memory_read("profile")["data"]["variants"] == ["hu_cash"]

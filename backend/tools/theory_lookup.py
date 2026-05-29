@@ -110,7 +110,13 @@ def _split_into_chunks(path: Path, raw: str) -> list[Chunk]:
         if not title:
             title = path.stem.replace("-", " ").title()
     source = str(meta.get("source", "")) or path.name
-    tags = meta.get("tags", []) if isinstance(meta.get("tags"), list) else []
+    raw_tags = meta.get("tags", [])
+    if isinstance(raw_tags, list):
+        tags = raw_tags
+    elif raw_tags:
+        tags = [raw_tags]   # a scalar `tags: cbet` -> ["cbet"], not dropped
+    else:
+        tags = []
 
     words = body.split()
     chunks: list[Chunk] = []

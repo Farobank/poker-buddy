@@ -59,3 +59,13 @@ def test_chunks_have_excerpts_within_limit():
 def test_k_parameter_caps_results():
     r = theory_lookup("c-bet", k=2)
     assert len(r["data"]) <= 2
+
+
+def test_scalar_frontmatter_tag_coerced_to_list():
+    # A frontmatter `tags: cbet` (scalar, not a list) was silently dropped to [].
+    # It must be coerced to a single-element list, not lost.
+    from pathlib import Path
+    from backend.tools.theory_lookup import _split_into_chunks
+    raw = "---\ntitle: T\nsource: S\ntags: cbet\n---\nBody text about c-betting strategy."
+    chunks = _split_into_chunks(Path("x.md"), raw)
+    assert chunks and chunks[0].tags == ["cbet"]

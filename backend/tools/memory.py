@@ -131,90 +131,102 @@ def memory_write(kind: str, content: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "note": "content must be a dict (JSON object)."}
 
     ts = now_ts()
-    # First transaction: journal entry + the structured table that lives in our
-    # own connection scope. Opponent observation is dispatched AFTER the
-    # connection closes (it opens its own connection in opponent_profile_update).
-    with connect() as conn:
-        conn.execute(
-            "INSERT INTO hand_journal (kind, content_json, ts) VALUES (?, ?, ?)",
-            (kind, json.dumps(content), ts),
-        )
-
-        if kind == "hand_discussed":
+    # The whole write — the journal+structured transaction AND the post-close
+    # opponent dispatch — is wrapped so a bad content value (e.g. a dict where a
+    # scalar is expected) degrades to an honest note instead of a mid-conversation
+    # HTTP 500. The early-return guards above stay outside, returning clean notes.
+    try:
+        with connect() as conn:
             conn.execute(
-                "INSERT INTO hands (format, hand_text, position, board, action_json, "
-                "opponent_label, takeaway, confidence, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    content.get("format"),
-                    content.get("hand"),
-                    content.get("position"),
-                    content.get("board"),
-                    json.dumps(content.get("action", [])),
-                    content.get("opponent_label"),
-                    content.get("takeaway"),
-                    content.get("confidence"),
-                    ts,
-                ),
+                "INSERT INTO hand_journal (kind, content_json, ts) VALUES (?, ?, ?)",
+                (kind, json.dumps(content), ts),
             )
 
-        elif kind == "leak_identified":
-            conn.execute(
-                "INSERT INTO leaks (description, severity, last_surfaced_at, fix_status) "
-                "VALUES (?, ?, ?, ?)",
-                (
-                    content.get("description", ""),
-                    content.get("severity", "real"),
-                    ts,
-                    content.get("fix_status", "open"),
-                ),
-            )
-
-        elif kind == "session_note":
-            existing = conn.execute(
-                "SELECT id FROM sessions ORDER BY started_at DESC LIMIT 1"
-            ).fetchone()
-            if existing and content.get("update_latest"):
+            if kind == "hand_discussed":
                 conn.execute(
-                    "UPDATE sessions SET duration_sec = COALESCE(?, duration_sec), "
-                    "hands_discussed = COALESCE(?, hands_discussed), "
-                    "summary = COALESCE(?, summary) WHERE id = ?",
+                    "INSERT INTO hands (format, hand_text, position, board, action_json, "
+                    "opponent_label, takeaway, confidence, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        content.get("duration_sec"),
-                        content.get("hands_discussed"),
-                        content.get("summary"),
-                        existing["id"],
+                        content.get("format"),
+                        content.get("hand"),
+                        content.get("position"),
+                        content.get("board"),
+                        json.dumps(content.get("action", [])),
+                        content.get("opponent_label"),
+                        content.get("takeaway"),
+                        content.get("confidence"),
+                        ts,
                     ),
                 )
-            else:
+
+            elif kind == "leak_identified":
                 conn.execute(
-                    "INSERT INTO sessions (started_at, duration_sec, hands_discussed, summary) "
+                    "INSERT INTO leaks (description, severity, last_surfaced_at, fix_status) "
                     "VALUES (?, ?, ?, ?)",
                     (
-                        content.get("started_at", ts),
-                        content.get("duration_sec"),
-                        content.get("hands_discussed", 0),
-                        content.get("summary"),
+                        content.get("description", ""),
+                        content.get("severity", "real"),
+                        ts,
+                        content.get("fix_status", "open"),
                     ),
                 )
 
-        elif kind == "profile_update":
-            conn.execute(
-                "INSERT OR REPLACE INTO profile (id, stakes, variants_json, study_goals, updated_at) "
-                "VALUES (1, ?, ?, ?, ?)",
-                (
-                    content.get("stakes"),
-                    json.dumps(content.get("variants", [])),
-                    content.get("study_goals"),
-                    ts,
-                ),
-            )
+            elif kind == "session_note":
+                existing = conn.execute(
+                    "SELECT id FROM sessions ORDER BY started_at DESC LIMIT 1"
+                ).fetchone()
+                if existing and content.get("update_latest"):
+                    conn.execute(
+                        "UPDATE sessions SET duration_sec = COALESCE(?, duration_sec), "
+                        "hands_discussed = COALESCE(?, hands_discussed), "
+                        "summary = COALESCE(?, summary) WHERE id = ?",
+                        (
+                            content.get("duration_sec"),
+                            content.get("hands_discussed"),
+                            content.get("summary"),
+                            existing["id"],
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO sessions (started_at, duration_sec, hands_discussed, summary) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            content.get("started_at", ts),
+                            content.get("duration_sec"),
+                            content.get("hands_discussed", 0),
+                            content.get("summary"),
+                        ),
+                    )
 
-    # Dispatch nested writers AFTER the journal connection closes.
-    if kind == "opponent_observation":
-        label = content.get("label")
-        observation = content.get("observation")
-        if label and observation:
-            opponent_profile_update(label, observation)
+            elif kind == "profile_update":
+                # Coerce a bare-string `variants` ("hu_cash") to a list so it
+                # round-trips as a list, not a JSON-encoded string.
+                variants = content.get("variants", [])
+                if not isinstance(variants, list):
+                    variants = [variants] if variants else []
+                conn.execute(
+                    "INSERT OR REPLACE INTO profile (id, stakes, variants_json, study_goals, updated_at) "
+                    "VALUES (1, ?, ?, ?, ?)",
+                    (
+                        content.get("stakes"),
+                        json.dumps(variants),
+                        content.get("study_goals"),
+                        ts,
+                    ),
+                )
+
+        # Dispatch nested writers AFTER the journal connection closes.
+        if kind == "opponent_observation":
+            label = content.get("label")
+            observation = content.get("observation")
+            if label and observation:
+                opponent_profile_update(label, observation)
+            else:
+                # Don't claim success for a read we didn't actually store.
+                return {"ok": False, "note": "opponent_observation needs both a label and an observation."}
+    except Exception as exc:
+        return {"ok": False, "note": f"Couldn't save that ({type(exc).__name__}). Tell me again and I'll log it."}
 
     return {"ok": True, "ts": ts}
 
