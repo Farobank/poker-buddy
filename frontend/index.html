@@ -85,6 +85,14 @@
       .status .blink { animation: blink 1.5s steps(2) infinite; }
       @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.32} }
 
+      /* Respect a user's reduced-motion preference: kill the ambient grain and
+         status blink. (The orb's idle spin/pulse is also frozen in JS; it stays
+         audio-reactive only while the buddy is actually talking.) */
+      @media (prefers-reduced-motion: reduce) {
+        #grain { animation: none; }
+        .status .blink { animation: none; }
+      }
+
       #tap { position: fixed; inset: 0; z-index: 4; cursor: pointer; }
 
       #fallback {
@@ -118,20 +126,22 @@
       let mode = "idle";
 
       const setStatus = (t, blink = false) => { statusEl.innerHTML = blink ? `<span class="blink">${t}</span>` : t; };
-      function setMode(m) {
+      function setMode(m, errText) {
         mode = m;
-        dotEl.classList.toggle("live", m === "listening" || m === "speaking" || m === "connecting");
-        V.activityTarget = (m === "listening" || m === "speaking") ? 1 : 0;
+        dotEl.classList.toggle("live", m === "listening" || m === "speaking" || m === "connecting" || m === "thinking");
+        V.activityTarget = (m === "listening" || m === "speaking" || m === "thinking") ? 1 : 0;
         if (m === "idle") setStatus("tap to talk");
         else if (m === "connecting") setStatus("connecting", true);
         else if (m === "listening") setStatus("listening", true);
+        else if (m === "thinking") setStatus("thinking", true);   // masks tool-call latency
         else if (m === "speaking") setStatus("talking");
-        else if (m === "error") setStatus("tap to retry");
+        else if (m === "error") setStatus(errText || "tap to retry");
       }
 
       setTimeout(() => { $("brand").classList.add("in"); $("tagline").classList.add("in"); $("status").classList.add("in"); }, 300);
 
       const V = { audio: 0, audioTarget: 0, activity: 0, activityTarget: 0, entrance: 0 };
+      const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
       // ----------------------------- sphere -----------------------------
       let THREE, renderer, scene, camera, points, uniforms, clock;
@@ -212,14 +222,18 @@
         const t = clock.getElapsedTime();
         let target = 0;
         if (mode === "speaking") { target = sampleVoice(); if (target <= 0) target = 0.32 + 0.22 * (Math.sin(t * 9) * 0.5 + 0.5); }
-        else if (mode === "listening") target = 0.05;
+        else if (mode === "thinking") target = 0.12 + 0.06 * (Math.sin(t * 4) * 0.5 + 0.5);  // a visible "lemme think" pulse during tool latency
+        else if (mode === "listening" && !reduceMotion) target = 0.05;
         V.audioTarget = target;
         V.audio += (V.audioTarget - V.audio) * 0.18;
         V.activity += (V.activityTarget - V.activity) * 0.05;
         V.entrance += (1 - V.entrance) * 0.03;
         uniforms.uTime.value = t; uniforms.uAudio.value = V.audio;
         uniforms.uActivity.value = V.activity; uniforms.uEntrance.value = V.entrance;
-        points.rotation.y = t * 0.045; points.rotation.x = Math.sin(t * 0.13) * 0.1;
+        // Freeze the decorative spin under reduced-motion, but keep it alive while talking.
+        if (!reduceMotion || mode === "speaking") {
+          points.rotation.y = t * 0.045; points.rotation.x = Math.sin(t * 0.13) * 0.1;
+        }
         renderer.render(scene, camera);
       }
 
@@ -242,15 +256,35 @@
         try {
           setMode("connecting");
           await ensureSDK();
-          convo = await Conversation.startSession({
+          let timer;
+          const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("CONNECT_TIMEOUT")), 8000); });
+          const session = Conversation.startSession({
             agentId: AGENT_ID,
             onModeChange: (m) => { const s = (m && (m.mode || m)) + ""; if (s.includes("speak")) setMode("speaking"); else if (s.includes("listen")) setMode("listening"); },
             onStatusChange: (s) => { const v = (s && (s.status || s)) + ""; if (v.includes("disconnect")) endTalk(); else if (v.includes("connect")) setMode("listening"); },
+            // Light up a "thinking" beat during the 1-3s webhook tool latency, then clear it.
+            onAgentToolRequest: () => { if (mode === "listening" || mode === "speaking") setMode("thinking"); },
+            onAgentToolResponse: () => { if (mode === "thinking") setMode("listening"); },
             onDisconnect: () => endTalk(),
-            onError: (e) => { console.warn("convai", e); setMode("error"); },
+            onError: (e) => { console.warn("convai", e); setMode("error", "dropped — tap to retry"); },
           });
+          try {
+            convo = await Promise.race([session, timeout]);
+          } catch (e) {
+            // If the real session resolves after the timeout, tear it down so we
+            // don't leak an open mic + socket behind an error screen.
+            session.then((late) => { try { late && late.endSession && late.endSession(); } catch (_) {} }).catch(() => {});
+            throw e;
+          } finally { clearTimeout(timer); }
           setMode("listening");
-        } catch (e) { console.warn("start failed", e); setMode("error"); convo = null; }
+        } catch (e) {
+          console.warn("start failed", e);
+          convo = null;
+          const name = (e && (e.name || e.message || "")) + "";
+          if (/NotAllowed|Permission|denied/i.test(name)) setMode("error", "mic blocked — allow it, then tap");
+          else if (/CONNECT_TIMEOUT/.test(name)) setMode("error", "timed out — tap to retry");
+          else setMode("error", "couldn't connect — tap to retry");
+        }
       }
       async function endTalk() { try { if (convo && convo.endSession) await convo.endSession(); } catch (e) {} convo = null; setMode("idle"); }
       $("tap").addEventListener("click", () => { (mode === "idle" || mode === "error") ? startTalk() : endTalk(); });
