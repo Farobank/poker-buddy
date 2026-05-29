@@ -63,7 +63,7 @@ def test_postflop_lookup_endpoint(client):
         "/tools/postflop_lookup",
         json={
             "format": "hu",
-            "hand": "KhQs",
+            "hand": "KdQs",  # top pair of kings; Kd not on the board (no collision)
             "board": "Kh7d2c",
             "position": "btn",
             "line": ["btn_open_2.5", "bb_call"],
