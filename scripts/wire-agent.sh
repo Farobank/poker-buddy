@@ -33,27 +33,21 @@ fi
 
 # Use python for cross-platform safe replace (macOS sed -i syntax is fiddly).
 python3 - <<PY
+import re
 from pathlib import Path
 p = Path("$INDEX")
 src = p.read_text()
 
-old_placeholder = 'agent-id="REPLACE_WITH_YOUR_AGENT_ID"'
-new = 'agent-id="$AGENT_ID"'
+# The frontend holds the agent id in a JS constant: const AGENT_ID = "agent_...";
+pattern = r'const AGENT_ID = "[^"]*";'
+new = 'const AGENT_ID = "$AGENT_ID";'
 
-if old_placeholder in src:
-    out = src.replace(old_placeholder, new)
+if re.search(pattern, src):
+    out = re.sub(pattern, new, src, count=1)
     p.write_text(out)
-    print(f"✓ Replaced placeholder → {new}")
+    print(f"✓ Set AGENT_ID → $AGENT_ID")
 else:
-    # Already wired with some agent ID — swap it.
-    import re
-    pattern = r'agent-id="[^"]*"'
-    if re.search(pattern, src):
-        out = re.sub(pattern, new, src, count=1)
-        p.write_text(out)
-        print(f"✓ Swapped existing agent-id → {new}")
-    else:
-        raise SystemExit(f"❌ Could not find agent-id attribute in {p}")
+    raise SystemExit(f"❌ Could not find 'const AGENT_ID = \"...\";' in {p}")
 PY
 
 echo ""

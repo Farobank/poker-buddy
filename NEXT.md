@@ -67,14 +67,12 @@ LLM_MODEL = "claude-opus-4-8"
 ```
 Then `.venv/bin/python scripts/sync_agent.py` and `./scripts/wire-agent.sh <new-id>`.
 
-### 3. Security hygiene (do before next public mention)
-Two leaks happened in the original build session:
-- `BUDDY_SHARED_SECRET` lived in a deleted doc that was briefly committed. History was rewritten + force-pushed, but orphan commits can persist on GitHub's side until their GC. **Mitigation:** rotate the secret + restart the tunnel (URL rotates, secret rotates, old combo is dead).
-- `ELEVENLABS_API_KEY` was pasted in chat. **Mitigation:** delete in dashboard → create new → paste into `.env`.
-
-Both 30-second tasks. See "Security rotation" section below for commands.
-
-**Note (2026-05-28):** the shared secret is baked into the agent's tool configs at sync time, so rotating `BUDDY_SHARED_SECRET` only takes effect *after* a re-sync — rotate-then-`sync_agent.py` as one step (see "What I'd do next"). Local git history is clean (the leaked doc is gone, `.env` is gitignored); the only live exposures left are GitHub's orphan-commit GC window and the chat-pasted ElevenLabs key.
+### 3. Security hygiene
+Secrets live only in `.env` (gitignored) and the ElevenLabs dashboard — none are
+tracked or present in git history (verified). The shared secret is baked into the
+agent's tool configs at sync time, so rotating `BUDDY_SHARED_SECRET` takes effect
+only after a re-sync — rotate-then-`sync_agent.py` as one step. See the "Security
+rotation" commands below.
 
 ## Backlog (v2, not v1)
 

@@ -23,7 +23,7 @@ cp .env.example .env
 
 Fill in `.env`:
 
-- [ ] `ANTHROPIC_API_KEY` — paste your sk-ant-... key
+- [ ] `ELEVENLABS_API_KEY` — for the agent sync (the LLM/model is chosen in the ElevenLabs dashboard; no Anthropic key goes in `.env`)
 - [ ] `BUDDY_SHARED_SECRET` — generate a random string:
       `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
       Save it; you'll paste it into ElevenLabs in step 4.
@@ -101,7 +101,7 @@ Six tools total: `preflop_lookup`, `postflop_lookup`, `theory_lookup`,
 $EDITOR ~/projects/poker-buddy/frontend/index.html
 ```
 
-- [ ] Replace `REPLACE_WITH_YOUR_AGENT_ID` (line ~159) with your Agent ID.
+- [ ] Set your Agent ID: edit `frontend/index.html` (`const AGENT_ID = "..."`), or run `./scripts/wire-agent.sh <agent_id>`. A demo ID is committed — replace it with the ID from the sync step.
 
 Serve the frontend locally for the first smoke test:
 
@@ -149,11 +149,10 @@ Only do this once the agent ID is wired in. The frontend has no secrets.
 
 ```bash
 cd ~/projects/poker-buddy
-gh repo create poker-buddy --public --source=. --remote=origin --push
-gh repo edit --enable-pages --pages-branch=main --pages-path=/frontend
+gh repo create poker-buddy --public --source=. --remote=origin --push   # if not already created
 ```
 
-Wait ~60s, then visit `https://<your-gh-user>.github.io/poker-buddy/`.
+One-time: on GitHub, **Settings → Pages → Build and deployment → Source → "GitHub Actions"**. The committed `.github/workflows/deploy-pages.yml` then publishes `frontend/` on every push to `main`. (Don't use `--pages-branch`/`--pages-path` — that selects legacy branch-mode, which fights the Actions workflow.) Watch the run under the Actions tab; when it's green, visit `https://<your-gh-user>.github.io/poker-buddy/`.
 
 - [ ] Add to iPhone home screen as in Option A's last three checkboxes.
 

@@ -18,12 +18,19 @@ ElevenLabs ConvAI agent (handles voice + Anthropic Opus 4.7) calls six tool webh
 
 ```bash
 uv sync                  # install deps into .venv
-cp .env.example .env     # fill in ANTHROPIC_API_KEY, ELEVENLABS_API_KEY
-uv run pytest            # verify everything passes (91 tests)
+cp .env.example .env     # fill in ELEVENLABS_API_KEY + BUDDY_SHARED_SECRET
+uv run pytest            # run the test suite (all green)
 ./scripts/start.sh       # backend + Cloudflare tunnel (writes BACKEND_URL to .env)
 .venv/bin/python scripts/sync_agent.py   # create the ConvAI agent + 6 tools
 ./scripts/wire-agent.sh <agent-id>       # point the PWA at it (id printed above)
 ```
+
+> **Heads-up lookups need a separate repo.** The HU (green-tier) engines route
+> through a personal `hu-poker-trainer` Python repo that the shim imports at load.
+> Without it, both `uv run pytest` and the backend fail to start; set
+> `HU_TRAINER_PATH` in `.env` if you have it elsewhere. The 6-max preflop engine
+> and theory lookup don't need it. (The LLM runs in ElevenLabs ConvAI, so no
+> Anthropic key lives here — the model is chosen in the ElevenLabs dashboard.)
 
 Open `frontend/index.html` (or deploy to GitHub Pages) and tap the widget.
 
@@ -36,12 +43,14 @@ backend/
   main.py                  FastAPI app with 6 tool endpoints
   db.py                    SQLite schema + migrations
   grader.py                Transcript-grader core (flags ungrounded GTO numbers)
+  engines/
+    six_max_preflop.py     Grounded 6-max preflop ranges (published, SIX_MAX_NOTES.md)
   integrations/
     hu_trainer.py          Import shim for ~/hu-poker-trainer
   tools/
     confidence.py          green/yellow/amber tagging
-    preflop_lookup.py      HU → hu_trainer; 6-max → null+amber
-    postflop_lookup.py     same pattern
+    preflop_lookup.py      HU → hu_trainer; 6-max → six_max_preflop engine (grounded)
+    postflop_lookup.py     HU flop c-bets → hu_trainer; turn/river/6-max → no-number read
     theory_lookup.py       BM25 over theory/*.md
     memory.py              read/write + opponent_profile_update
 theory/                    Curated theory chunks for BM25
@@ -61,3 +70,7 @@ scripts/
 ## Status
 
 v1 — built overnight 2026-05-27 → 2026-05-28.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
