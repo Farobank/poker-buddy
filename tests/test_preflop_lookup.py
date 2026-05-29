@@ -1,3 +1,5 @@
+import pytest
+
 from backend.tools.confidence import Confidence
 from backend.tools.preflop_lookup import preflop_lookup
 
@@ -92,5 +94,33 @@ def test_unsupported_hu_spot_returns_yellow():
         "hu", "bb", "AA",
         action_so_far=["btn_open_2.5", "bb_3bet_9", "btn_4bet_21"],
     )
+    assert r["data"] is None
+    assert r["confidence"] == Confidence.YELLOW.value
+
+
+# ---------------------------------------------------------------------------
+# Action-verb normalization (audit): the agent phrases an open many ways and, in
+# HU, the SB *is* the button. These must all route to the grounded lookup, not a
+# yellow "not in my solver-verified set" decline (which made the buddy sound
+# unsure on a spot it can answer perfectly). Mirrors six_max_preflop._parse_action.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("open_action", ["btn_open_2.5", "btn_raise_2.5", "btn_rfi_2.5", "sb_open_2.5"])
+def test_hu_bb_vs_open_accepts_verb_variants(open_action):
+    r = preflop_lookup("hu", "bb", "AA", action_so_far=[open_action])
+    assert r["data"] is not None, f"{open_action} should ground BB defense, not decline"
+    assert r["confidence"] in (Confidence.GREEN.value, Confidence.YELLOW.value)
+
+
+@pytest.mark.parametrize("threebet_action", ["bb_3bet_10", "bb_reraise_10", "bb_rr_10"])
+def test_hu_btn_vs_3bet_accepts_verb_variants(threebet_action):
+    r = preflop_lookup("hu", "btn", "AKs", action_so_far=["btn_open_2.5", threebet_action])
+    assert r["data"] is not None, f"{threebet_action} should ground the vs-3bet decision"
+    assert r["confidence"] in (Confidence.GREEN.value, Confidence.YELLOW.value)
+
+
+def test_hu_4bet_label_still_declines_to_yellow():
+    # Guard: a genuine 4-bet label is NOT an open/3bet and must still fall through.
+    r = preflop_lookup("hu", "bb", "AA", action_so_far=["btn_open_2.5", "bb_3bet_9", "btn_4bet_21"])
     assert r["data"] is None
     assert r["confidence"] == Confidence.YELLOW.value

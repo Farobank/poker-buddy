@@ -75,13 +75,15 @@ def _hu(
             }
 
         last = actions[-1]
-        # BB facing BTN open.
-        if last.startswith("btn_open") and position == "bb":
+        # BB facing a BTN/SB open. The agent phrases an open many ways (open /
+        # raise / rfi) and in HU the SB *is* the button — accept all of them so a
+        # grounded spot doesn't get mislabeled "not in my solver-verified set".
+        if _is_btn_open(last) and position == "bb":
             open_size = _parse_size_from_action(last, default=2.5)
             return hu_trainer.preflop_bb_vs_open(hand, open_size, stack_depth_bb)
 
         # BTN/SB facing a BB 3-bet (4-bet / call / fold).
-        if last.startswith("bb_3bet") and position in ("btn", "sb"):
+        if _is_bb_3bet(last) and position in ("btn", "sb"):
             three_bet_size = _parse_size_from_action(last, default=8.0)
             return hu_trainer.preflop_btn_vs_3bet(hand, three_bet_size, stack_depth_bb)
 
@@ -132,3 +134,21 @@ def _parse_size_from_action(action: str, default: float) -> float:
         except ValueError:
             pass
     return default
+
+
+# Verb synonyms (exact-token match on the action's second field), mirroring
+# six_max_preflop._parse_action so HU and 6-max accept the same phrasings.
+_OPEN_VERBS = ("open", "opens", "raise", "raises", "rfi", "or")
+_THREE_BET_VERBS = ("3bet", "3bets", "reraise", "rr")
+
+
+def _is_btn_open(action: str) -> bool:
+    """True for a button/SB open in any common phrasing (HU: SB == BTN)."""
+    parts = action.split("_")
+    return len(parts) >= 2 and parts[0] in ("btn", "sb") and parts[1] in _OPEN_VERBS
+
+
+def _is_bb_3bet(action: str) -> bool:
+    """True for a big-blind 3-bet in any common phrasing."""
+    parts = action.split("_")
+    return len(parts) >= 2 and parts[0] == "bb" and parts[1] in _THREE_BET_VERBS
