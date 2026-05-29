@@ -102,8 +102,9 @@ def _combos(notation: str) -> int:
 
 
 def _score(notation: str) -> int:
-    """Coarse preflop hand strength (0-100ish), used ONLY for the marginal
-    call/fold boundary in BB defense and IP flatting — both yellow tiers.
+    """Coarse RAW preflop hand strength (high-card weighted). Used ONLY for the
+    marginal call/fold boundary when FACING A 3-BET, where raw equity vs a
+    strong, capped-ish 3-bet range matters more than postflop playability.
 
     Clear value/fold cases are handled by explicit green sets; this just orders
     the fuzzy middle the way every source agrees it orders (high cards, pairs,
@@ -118,6 +119,40 @@ def _score(notation: str) -> int:
         s += 8
     gap = hi - lo - 1
     s -= gap * 2
+    return s
+
+
+def _defense_score(notation: str) -> int:
+    """Playability-weighted hand order for DEFENDING / FLATTING decisions (BB
+    defense, in-position flats). Unlike `_score`, this prizes the qualities that
+    realize equity heads-up postflop — suitedness and connectedness — over raw
+    high-card strength, because that's what makes a hand worth continuing rather
+    than folding to a single raise.
+
+    Why a separate scorer: a single high-card-weighted score ranked offsuit junk
+    (96o, K7o) ABOVE suited connectors (54s, 65s), so BB defense came out
+    backwards (folding 54s while calling 96o). Defending and 4-bet-or-folding
+    want opposite orderings, so they get different scorers (boil-the-lake fix).
+
+    Pairs are always strong defends/flats (set value), so they score high."""
+    if len(notation) == 2:  # pair — always a strong continue
+        return 50 + _RANK_VAL[notation[0]] * 4
+    hi = _RANK_VAL[notation[0]]
+    lo = _RANK_VAL[notation[1]]
+    suited = notation.endswith("s")
+    gap = hi - lo - 1
+    s = hi * 2 + lo * 3  # weight the low card (connectedness) more than the high card
+    if suited:
+        s += 24
+        if gap == 0:
+            s += 8       # true connectors
+        elif gap == 1:
+            s += 4       # one-gappers
+        else:
+            s -= gap * 2
+    else:
+        s -= 6           # offsuit hands realize worse heads-up
+        s -= gap * 3     # offsuit gappers are the genuine junk
     return s
 
 
@@ -377,11 +412,12 @@ def vs_open_decision(position: str, hand: str, opener: str) -> SixMaxDecision:
             sizing_bb=tbet_size,
         )
 
-    # --- calling / folding ---
-    score = _score(h)
+    # --- calling / folding (playability-weighted; these are reads → yellow) ---
+    score = _defense_score(h)
     if pos == "bb":
-        # BB closes the action and defends wider vs later (looser) opens.
-        thresh = {"utg": 60, "mp": 56, "co": 50, "btn": 42, "sb": 40}.get(opp, 50)
+        # BB closes the action and defends wider vs later (looser) opens. Suited
+        # connectors are the canonical defends, weak offsuit one-gappers fold.
+        thresh = {"utg": 56, "mp": 50, "co": 44, "btn": 34, "sb": 32}.get(opp, 44)
         if score >= thresh:
             return _decision(
                 "call", Confidence.YELLOW, "Big-blind defense",
@@ -390,9 +426,18 @@ def vs_open_decision(position: str, hand: str, opener: str) -> SixMaxDecision:
                 f"out of position. (My read on the defending range, not a solver pull.)",
             )
         return _decision(
-            "fold", Confidence.GREEN if score < thresh - 12 else Confidence.YELLOW,
+            "fold", Confidence.GREEN if score < thresh - 14 else Confidence.YELLOW,
             "Big-blind defense",
             f"{h} is below the big-blind defending range versus a {opp.upper()} open. Fold.",
+        )
+
+    # Pocket pairs flat IN POSITION to set-mine — uncontroversial at 100bb.
+    if hero_ip and len(h) == 2:
+        return _decision(
+            "call", Confidence.YELLOW, "In-position flat (set-mine)",
+            f"{h} flats a {opp.upper()} open in position to set-mine — the implied "
+            f"odds are great at a hundred big when you flop a set. (My read, not a "
+            f"solver pull.)",
         )
 
     if hero_ip and score >= 50:
@@ -403,9 +448,10 @@ def vs_open_decision(position: str, hand: str, opener: str) -> SixMaxDecision:
             f"position. (My read, not a solver pull.)",
         )
 
-    # Out of position (SB / non-IP) or too weak to flat: 3-bet-or-fold → fold.
+    # Out of position (SB / non-IP), or in position but too weak to flat:
+    # 3-bet-or-fold → fold. Green only for clear trash; a marginal fold is a read.
     return _decision(
-        "fold", Confidence.GREEN if score < 50 else Confidence.YELLOW,
+        "fold", Confidence.GREEN if score < 30 else Confidence.YELLOW,
         "3-bet-or-fold",
         f"{h} folds versus a {opp.upper()} open from {pos.upper()} — not in the "
         f"value/bluff three-bet range and {'out of position' if pos in ('sb', 'bb') else 'not a clear flat'}, "
@@ -522,6 +568,15 @@ def lookup(position: str, hand: str, actions: list[str] | None = None) -> dict[s
     dict. Out-of-v1-scope spots decline with data=None + note instead of guessing."""
     pos = _canon_pos(position)
     actions = [a for a in (actions or []) if a and a.strip()]
+
+    # Validate the hero seat on EVERY path (not just RFI). A garbled position
+    # must decline to amber, never fabricate a confident green/yellow line for a
+    # seat that doesn't exist. _SEAT_ORDER is exactly {utg,mp,co,btn,sb,bb}.
+    if pos not in _SEAT_ORDER:
+        return _decline(
+            f"Couldn't map hero position {position!r} to a 6-max seat. "
+            "Say UTG, MP, CO, BTN, SB, or BB."
+        )
 
     try:
         h_norm = normalize_hand(hand)  # validate early; bad input -> decline, never crash

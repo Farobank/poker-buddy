@@ -275,3 +275,90 @@ def test_open_ranges_widen_monotonically_by_position():
     pcts = [sm.weighted_open_percent(p) for p in ("utg", "mp", "co", "btn")]
     assert pcts == sorted(pcts), pcts
     assert pcts[0] < pcts[-1]
+
+
+# ---------------------------------------------------------------------------
+# Defense ordering (audit fix): suited playable hands outrank offsuit junk.
+# vs a BTN steal the BB must DEFEND suited connectors and FOLD weak offsuit
+# gappers — the OPPOSITE of what the old high-card-only _score produced
+# (it folded 54s while calling 96o/T6o/Q5o). Suited connectors realize far
+# more equity heads-up postflop. (six_max_preflop: BB-defense branch.)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("hand", ["54s", "65s", "76s", "87s", "98s", "T9s"])
+def test_bb_defends_suited_connectors_vs_btn(hand):
+    d = sm.vs_open_decision("bb", hand, opener="btn")
+    assert d.action in ("call", "3bet"), f"{hand} should defend vs BTN, got {d.action}"
+
+
+@pytest.mark.parametrize("hand", ["96o", "T6o", "Q5o", "K4o", "J7o"])
+def test_bb_folds_weak_offsuit_junk_vs_btn(hand):
+    d = sm.vs_open_decision("bb", hand, opener="btn")
+    assert d.action == "fold", f"{hand} should fold vs BTN, got {d.action}"
+
+
+def test_bb_defense_prefers_suited_connector_over_offsuit_gapper():
+    # The exact inversion the audit caught: 54s defends, 96o folds vs a BTN open.
+    assert sm.vs_open_decision("bb", "54s", opener="btn").action in ("call", "3bet")
+    assert sm.vs_open_decision("bb", "96o", opener="btn").action == "fold"
+
+
+def test_bb_tightens_vs_utg_open():
+    # vs a tight UTG open the BB still defends premiums/strong suited but folds the
+    # loosest connectors it would defend vs a button steal.
+    assert sm.vs_open_decision("bb", "T9s", opener="utg").action in ("call", "3bet")
+    assert sm.vs_open_decision("bb", "54s", opener="utg").action == "fold"
+
+
+# ---------------------------------------------------------------------------
+# Small pairs flat IN POSITION to set-mine — never a "solver-verified" fold.
+# Audit: 22 on the BTN vs a CO open was returned as a GREEN fold (poker-wrong
+# at maximum false confidence). At 100bb small pairs flat IP for set value.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("hand", ["22", "44", "66"])
+def test_small_pairs_flat_ip_vs_late_open(hand):
+    d = sm.vs_open_decision("btn", hand, opener="co")
+    assert d.action == "call", f"{hand} flats IP to set-mine, got {d.action}"
+    assert d.confidence.value in GROUNDED
+
+
+def test_small_pair_ip_is_never_a_green_fold():
+    d = sm.vs_open_decision("btn", "22", opener="co")
+    assert not (d.action == "fold" and d.confidence.value == GREEN), \
+        "22 on the button vs a CO open must not be a 'solver-verified' fold"
+
+
+# ---------------------------------------------------------------------------
+# Green is reserved for CLEAR decisions. A marginal in-position fold is a YELLOW
+# read, not a falsely-confident "solver-verified" fold. Obvious trash stays green.
+# ---------------------------------------------------------------------------
+
+def test_marginal_ip_fold_is_yellow_not_green():
+    d = sm.vs_open_decision("btn", "K9o", opener="co")
+    assert d.action == "fold"
+    assert d.confidence.value == YELLOW
+
+
+def test_clear_trash_fold_stays_green():
+    d = sm.vs_open_decision("btn", "32o", opener="co")
+    assert d.action == "fold"
+    assert d.confidence.value == GREEN
+
+
+# ---------------------------------------------------------------------------
+# Hero position is validated on EVERY path (audit fix). A garbled seat that
+# isn't a real 6-max position must decline to amber on the vs-open / vs-3bet
+# paths too — not fabricate a confident green/yellow line (it used to).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("actions", [
+    [],                                   # RFI path
+    ["co_open_2.5"],                      # vs-open path
+    ["zz_open_2.5", "co_3bet_8"],         # vs-3bet path
+])
+def test_invalid_hero_position_declines_amber(actions):
+    result = sm.lookup("blinds", "AKs", actions=actions)
+    assert result["data"] is None, f"actions={actions}"
+    assert result["confidence"] == AMBER
+    assert result["note"]
